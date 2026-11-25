@@ -115,7 +115,7 @@ def generate_unique_post():
     raise Exception(f"فشلت جميع النماذج: {last_error}")
 
 def send_to_telegram(text):
-    url = "https://telegram.org" + TELEGRAM_TOKEN + "/sendMessage"
+        url = f"https://telegram.org{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": CHANNEL_ID,
         "text": text,
