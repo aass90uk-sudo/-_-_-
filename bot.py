@@ -3,15 +3,14 @@ import json
 import time
 import schedule
 import requests
-from google import genai
-from google.genai import types
+from groq import Groq
 
 # جلب المتغيرات من إعدادات Railway
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHANNEL_ID = os.environ.get("CHANNEL_ID") # @Athar_Dz_Islamicc
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = Groq(api_key=GROQ_API_KEY)
 
 # مسار ملف الذاكرة الدائمة المربوط بـ Volume
 DATA_DIR = "/data" if os.path.exists("/data") else "."
@@ -45,6 +44,7 @@ CHANNEL_FOOTER = (
 )
 
 def load_history():
+    """قراءة سجل جميع المنشورات السابقة من الملف الدائم"""
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -54,30 +54,17 @@ def load_history():
     return []
 
 def save_to_history(title):
+    """حفظ عنوان المنشور الجديد في السجل الدائم"""
     history = load_history()
     history.append(title)
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
 def extract_title(post_text):
-    first_line = post_text.split("\n")
+    """استخراج السطر الأول (العنوان) لحفظه في الأرشيف"""
+    first_line = post_text.split("\n")[0]
     clean_title = first_line.replace("<b>", "").replace("</b>", "").strip()
     return clean_title
-
-def get_available_flash_models():
-    """جلب قائمة نماذج Flash المتاحة فعلياً في مفتاح API الخاص بك"""
-    models = []
-    try:
-        for m in client.models.list():
-            name = m.name.replace("models/", "")
-            if "flash" in name.lower() and "image" not in name.lower() and "audio" not in name.lower():
-                models.append(name)
-    except Exception as e:
-        print(f"⚠️ تعذر جلب قائمة النماذج: {e}")
-    
-    # ترتيب النماذج بحيث يجرب الأحدث أولاً
-    models.sort(reverse=True)
-    return models if models else ["gemini-3.8-flash"]
 
 def generate_unique_post():
     history = load_history()
@@ -93,41 +80,24 @@ def generate_unique_post():
     else:
         prompt = "ابتكر موضوعاً نفسياً أو زوجياً عميقاً ومؤثراً لأول منشور في القناة، واكتبه الآن:"
 
-    available_models = get_available_flash_models()
-    print(f"📋 النماذج المتاحة في حسابك: {available_models}")
-
-    last_error = None
-    for attempt in range(4):
-        for model_name in available_models:
-            try:
-                print(f"🔄 محاولة التوليد باستخدام {model_name}...")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_PROMPT,
-                        temperature=0.95,
-                    )
-                )
-                raw_text = response.text.strip()
-                new_title = extract_title(raw_text)
-                
-                if "[FOOTER]" in raw_text:
-                    final_post = raw_text.replace("[FOOTER]", CHANNEL_FOOTER)
-                else:
-                    final_post = f"{raw_text}\n{CHANNEL_FOOTER}"
-                    
-                return final_post, new_title
-                
-            except Exception as e:
-                last_error = e
-                print(f"⚠️ خطأ مع {model_name}: {str(e)[:120]}")
-                time.sleep(2)
-                
-        print("⏳ سننتظر 20 ثانية ونعيد المحاولة...")
-        time.sleep(20)
+    chat_completion = client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ],
+        model="llama-3.3-70b-versatile",
+        temperature=0.9,
+    )
+    
+    raw_text = chat_completion.choices[0].message.content.strip()
+    new_title = extract_title(raw_text)
+    
+    if "[FOOTER]" in raw_text:
+        final_post = raw_text.replace("[FOOTER]", CHANNEL_FOOTER)
+    else:
+        final_post = f"{raw_text}\n{CHANNEL_FOOTER}"
         
-    raise Exception(f"فشلت جميع المحاولات: {last_error}")
+    return final_post, new_title
 
 def send_to_telegram(text):
     url = f"https://telegram.org{TELEGRAM_TOKEN}/sendMessage"
@@ -141,7 +111,7 @@ def send_to_telegram(text):
     return response.status_code == 200, response.text
 
 def job():
-    print("⏳ جاري ابتكار منشور جديد غير مكرر...")
+    print("⏳ جاري ابتكار منشور جديد غير مكرر عبر Groq...")
     try:
         post_content, new_title = generate_unique_post()
         success, response_info = send_to_telegram(post_content)
@@ -156,7 +126,7 @@ def job():
 if __name__ == "__main__":
     print("🚀 البوت بدأ العمل بذاكرة دائمة ومواضيع متجددة...")
     
-    # نشر منشور تجريبي عند التشغيل
+    # نشر منشور تجريبي فوري عند التشغيل
     job()
     
     # جدولة النشر اليومي (17:00 UTC تعادل 8:00 مساءً بتوقيت مكة المكرمة واليمن)
@@ -165,3 +135,4 @@ if __name__ == "__main__":
     while True:
         schedule.run_pending()
         time.sleep(30)
+    
