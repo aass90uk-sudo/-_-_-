@@ -13,7 +13,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# مسار ملف الذاكرة الدائمة (يفضل ربطه بـ Volume في Railway على المسار /data)
+# مسار ملف الذاكرة الدائمة المربوط بـ Volume
 DATA_DIR = "/data" if os.path.exists("/data") else "."
 HISTORY_FILE = os.path.join(DATA_DIR, "published_history.json")
 
@@ -70,7 +70,6 @@ def extract_title(post_text):
 def generate_unique_post():
     history = load_history()
     
-    # صياغة قائمة الممنوعات من السجل الدائم
     if history:
         past_titles_text = "\n".join([f"- {t}" for t in history])
         prompt = (
@@ -83,17 +82,15 @@ def generate_unique_post():
         prompt = "ابتكر موضوعاً نفسياً أو زوجياً عميقاً ومؤثراً لأول منشور في القناة، واكتبه الآن:"
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
-            temperature=0.95, # رفع مستوى الإبداع والتنويع لضمان أفكار متجددة كل يوم
+            temperature=0.95,
         )
     )
     
     raw_text = response.text.strip()
-    
-    # استخراج العنوان وحفظه في السجل
     new_title = extract_title(raw_text)
     
     if "[FOOTER]" in raw_text:
@@ -133,10 +130,9 @@ if __name__ == "__main__":
     # نشر منشور تجريبي عند التشغيل
     job()
     
-    # جدولة النشر اليومي (17:00 UTC تعادل 8:00 مساءً بتوقيت مكة واليمن)
+    # جدولة النشر اليومي (17:00 UTC تعادل 8:00 مساءً بتوقيت مكة المكرمة واليمن)
     schedule.every().day.at("17:00").do(job)
     
     while True:
         schedule.run_pending()
         time.sleep(30)
-    
