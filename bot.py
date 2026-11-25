@@ -44,7 +44,6 @@ CHANNEL_FOOTER = (
 )
 
 def load_history():
-    """قراءة سجل جميع المنشورات السابقة من الملف الدائم"""
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -54,17 +53,32 @@ def load_history():
     return []
 
 def save_to_history(title):
-    """حفظ عنوان المنشور الجديد في السجل الدائم"""
     history = load_history()
     history.append(title)
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
 def extract_title(post_text):
-    """استخراج السطر الأول (العنوان) لحفظه في الأرشيف"""
     first_line = post_text.split("\n")[0]
     clean_title = first_line.replace("<b>", "").replace("</b>", "").strip()
     return clean_title
+
+def get_best_groq_models():
+    """جلب قائمة النماذج النصية المتاحة فعلياً في حسابك على Groq"""
+    models = []
+    try:
+        response = client.models.list()
+        for m in response.data:
+            mid = m.id
+            # استبعاد نماذج الصوت والصور والرقابة
+            if not any(x in mid.lower() for x in ["whisper", "tts", "guard", "vision", "embed"]):
+                models.append(mid)
+    except Exception as e:
+        print(f"⚠️ تعذر جلب النماذج: {e}")
+    
+    # تفضيل نماذج llama أو qwen الكبيرة أولاً
+    models.sort(key=lambda x: ("70b" in x or "llama" in x or "qwen" in x), reverse=True)
+    return models
 
 def generate_unique_post():
     history = load_history()
@@ -80,24 +94,36 @@ def generate_unique_post():
     else:
         prompt = "ابتكر موضوعاً نفسياً أو زوجياً عميقاً ومؤثراً لأول منشور في القناة، واكتبه الآن:"
 
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ],
-        model="llama-3.3-70b-versatile",
-        temperature=0.9,
-    )
-    
-    raw_text = chat_completion.choices[0].message.content.strip()
-    new_title = extract_title(raw_text)
-    
-    if "[FOOTER]" in raw_text:
-        final_post = raw_text.replace("[FOOTER]", CHANNEL_FOOTER)
-    else:
-        final_post = f"{raw_text}\n{CHANNEL_FOOTER}"
-        
-    return final_post, new_title
+    available_models = get_best_groq_models()
+    print(f"📋 النماذج المتاحة في Groq: {available_models}")
+
+    last_error = None
+    for model_name in available_models:
+        try:
+            print(f"🔄 جاري التوليد باستخدام {model_name}...")
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt}
+                ],
+                model=model_name,
+                temperature=0.9,
+            )
+            raw_text = chat_completion.choices[0].message.content.strip()
+            new_title = extract_title(raw_text)
+            
+            if "[FOOTER]" in raw_text:
+                final_post = raw_text.replace("[FOOTER]", CHANNEL_FOOTER)
+            else:
+                final_post = f"{raw_text}\n{CHANNEL_FOOTER}"
+                
+            return final_post, new_title
+        except Exception as e:
+            last_error = e
+            print(f"⚠️ تخطي {model_name}: {str(e)[:80]}")
+            continue
+
+    raise Exception(f"فشلت جميع النماذج: {last_error}")
 
 def send_to_telegram(text):
     url = f"https://telegram.org{TELEGRAM_TOKEN}/sendMessage"
@@ -135,4 +161,3 @@ if __name__ == "__main__":
     while True:
         schedule.run_pending()
         time.sleep(30)
-    
