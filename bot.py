@@ -115,7 +115,10 @@ def generate_unique_post():
     raise Exception(f"فشلت جميع النماذج: {last_error}")
 
 def send_to_telegram(text):
-    url = f"https://telegram.org{TELEGRAM_TOKEN}/sendMessage"
+    base_url = "https://telegram.org"
+    bot_path = "/bot" + TELEGRAM_TOKEN
+    method = "/sendMessage"
+    url = base_url + bot_path + method
     payload = {
         "chat_id": CHANNEL_ID,
         "text": text,
@@ -150,4 +153,3 @@ if __name__ == "__main__":
     while True:
         schedule.run_pending()
         time.sleep(30)
-    
