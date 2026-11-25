@@ -17,13 +17,6 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 DATA_DIR = "/data" if os.path.exists("/data") else "."
 HISTORY_FILE = os.path.join(DATA_DIR, "published_history.json")
 
-# قائمة النماذج مرتبة حسب الأولوية (إذا كان الأول مزدحماً ينتقل للثاني تلقائياً)
-MODELS_TO_TRY = [
-    "gemini-3.8-flash",
-    "gemini-3.8-flash-lite",
-    "gemini-3.0-flash"
-]
-
 SYSTEM_PROMPT = """
 أنت كاتب محتوى متخصص في (الوعي الزوجي، الصحة النفسية والجسدية في الزواج، والعلاقات الأسرية) بأسلوب راقٍ، محافظ، علمي، ودافئ.
 اكتب منشوراً لقناة تيليجرام باللهجة السعودية/الخليجية البيضاء القريبة من القلب.
@@ -52,7 +45,6 @@ CHANNEL_FOOTER = (
 )
 
 def load_history():
-    """قراءة سجل جميع المنشورات السابقة من الملف الدائم"""
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -62,17 +54,30 @@ def load_history():
     return []
 
 def save_to_history(title):
-    """حفظ عنوان المنشور الجديد في السجل الدائم"""
     history = load_history()
     history.append(title)
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
 def extract_title(post_text):
-    """استخراج السطر الأول (العنوان) لحفظه في الأرشيف"""
-    first_line = post_text.split("\n")[0]
+    first_line = post_text.split("\n")
     clean_title = first_line.replace("<b>", "").replace("</b>", "").strip()
     return clean_title
+
+def get_available_flash_models():
+    """جلب قائمة نماذج Flash المتاحة فعلياً في مفتاح API الخاص بك"""
+    models = []
+    try:
+        for m in client.models.list():
+            name = m.name.replace("models/", "")
+            if "flash" in name.lower() and "image" not in name.lower() and "audio" not in name.lower():
+                models.append(name)
+    except Exception as e:
+        print(f"⚠️ تعذر جلب قائمة النماذج: {e}")
+    
+    # ترتيب النماذج بحيث يجرب الأحدث أولاً
+    models.sort(reverse=True)
+    return models if models else ["gemini-3.8-flash"]
 
 def generate_unique_post():
     history = load_history()
@@ -88,12 +93,14 @@ def generate_unique_post():
     else:
         prompt = "ابتكر موضوعاً نفسياً أو زوجياً عميقاً ومؤثراً لأول منشور في القناة، واكتبه الآن:"
 
+    available_models = get_available_flash_models()
+    print(f"📋 النماذج المتاحة في حسابك: {available_models}")
+
     last_error = None
-    # تجربة النماذج مع إعادة المحاولة عند وجود ضغط على السيرفر
-    for attempt in range(3):
-        for model_name in MODELS_TO_TRY:
+    for attempt in range(4):
+        for model_name in available_models:
             try:
-                print(f"🔄 محاولة التوليد باستخدام {model_name} (محاولة {attempt + 1})...")
+                print(f"🔄 محاولة التوليد باستخدام {model_name}...")
                 response = client.models.generate_content(
                     model=model_name,
                     contents=prompt,
@@ -114,13 +121,13 @@ def generate_unique_post():
                 
             except Exception as e:
                 last_error = e
-                print(f"⚠️ النموذج {model_name} مشغول حالياً، جاري تجربة البديل...")
-                time.sleep(3)
+                print(f"⚠️ خطأ مع {model_name}: {str(e)[:120]}")
+                time.sleep(2)
                 
-        print("⏳ جميع النماذج عليها ضغط الآن، سننتظر 15 ثانية ونعيد المحاولة...")
-        time.sleep(15)
+        print("⏳ سننتظر 20 ثانية ونعيد المحاولة...")
+        time.sleep(20)
         
-    raise Exception(f"فشلت جميع المحاولات بسبب ضغط السيرفرات: {last_error}")
+    raise Exception(f"فشلت جميع المحاولات: {last_error}")
 
 def send_to_telegram(text):
     url = f"https://telegram.org{TELEGRAM_TOKEN}/sendMessage"
@@ -158,4 +165,3 @@ if __name__ == "__main__":
     while True:
         schedule.run_pending()
         time.sleep(30)
-        
