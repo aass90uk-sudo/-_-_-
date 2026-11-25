@@ -17,6 +17,13 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 DATA_DIR = "/data" if os.path.exists("/data") else "."
 HISTORY_FILE = os.path.join(DATA_DIR, "published_history.json")
 
+# قائمة النماذج مرتبة حسب الأولوية (إذا كان الأول مزدحماً ينتقل للثاني تلقائياً)
+MODELS_TO_TRY = [
+    "gemini-3.8-flash",
+    "gemini-3.8-flash-lite",
+    "gemini-3.0-flash"
+]
+
 SYSTEM_PROMPT = """
 أنت كاتب محتوى متخصص في (الوعي الزوجي، الصحة النفسية والجسدية في الزواج، والعلاقات الأسرية) بأسلوب راقٍ، محافظ، علمي، ودافئ.
 اكتب منشوراً لقناة تيليجرام باللهجة السعودية/الخليجية البيضاء القريبة من القلب.
@@ -81,24 +88,39 @@ def generate_unique_post():
     else:
         prompt = "ابتكر موضوعاً نفسياً أو زوجياً عميقاً ومؤثراً لأول منشور في القناة، واكتبه الآن:"
 
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0.95,
-        )
-    )
-    
-    raw_text = response.text.strip()
-    new_title = extract_title(raw_text)
-    
-    if "[FOOTER]" in raw_text:
-        final_post = raw_text.replace("[FOOTER]", CHANNEL_FOOTER)
-    else:
-        final_post = f"{raw_text}\n{CHANNEL_FOOTER}"
+    last_error = None
+    # تجربة النماذج مع إعادة المحاولة عند وجود ضغط على السيرفر
+    for attempt in range(3):
+        for model_name in MODELS_TO_TRY:
+            try:
+                print(f"🔄 محاولة التوليد باستخدام {model_name} (محاولة {attempt + 1})...")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                        temperature=0.95,
+                    )
+                )
+                raw_text = response.text.strip()
+                new_title = extract_title(raw_text)
+                
+                if "[FOOTER]" in raw_text:
+                    final_post = raw_text.replace("[FOOTER]", CHANNEL_FOOTER)
+                else:
+                    final_post = f"{raw_text}\n{CHANNEL_FOOTER}"
+                    
+                return final_post, new_title
+                
+            except Exception as e:
+                last_error = e
+                print(f"⚠️ النموذج {model_name} مشغول حالياً، جاري تجربة البديل...")
+                time.sleep(3)
+                
+        print("⏳ جميع النماذج عليها ضغط الآن، سننتظر 15 ثانية ونعيد المحاولة...")
+        time.sleep(15)
         
-    return final_post, new_title
+    raise Exception(f"فشلت جميع المحاولات بسبب ضغط السيرفرات: {last_error}")
 
 def send_to_telegram(text):
     url = f"https://telegram.org{TELEGRAM_TOKEN}/sendMessage"
@@ -136,3 +158,4 @@ if __name__ == "__main__":
     while True:
         schedule.run_pending()
         time.sleep(30)
+        
