@@ -1,6 +1,6 @@
 import os
+import json
 import time
-import random
 import schedule
 import requests
 from google import genai
@@ -8,27 +8,14 @@ from google.genai import types
 
 # جلب المتغيرات من إعدادات Railway
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHANNEL_ID = os.environ.get("CHANNEL_ID") # ضع في Railway القيمة: @Athar_Dz_Islamicc
+CHANNEL_ID = os.environ.get("CHANNEL_ID") # @Athar_Dz_Islamicc
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# تهيئة عميل Gemini
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# قائمة أفكار متنوعة لضمان عدم تكرار المواضيع
-TOPICS = [
-    "الفتور الصامت بين الزوجين وكيفية كسره بذكاء",
-    "الفرق بين احتياج الرجل للاحترام واحتياج المرأة للأمان العاطفي",
-    "التفريغ العصبي وبكاء المرأة المفاجئ دون سبب واضح",
-    "تأثير الضغوط اليومية والتوتر على التناغم الجسدي والنفسي",
-    "خطورة المجاملة الزائدة والكتمان في بداية الحياة الزوجية",
-    "كيف يقتل تدخل الأهل والمقارنات خصوصية العروسين",
-    "لغة الجسد واللمسة الدافئة كبديل عن الصمت وقت الخلاف",
-    "الاستعداد النفسي والجسدي وأهمية التمهيد العاطفي في العلاقة",
-    "سوء الفهم في طريقة تعبير كل طرف عن حبه واهتمامه",
-    "كيف نحمي العلاقة الزوجية من الروتين والملل بعد سنوات من الزواج"
-]
-
-recent_topics = []
+# مسار ملف الذاكرة الدائمة (يفضل ربطه بـ Volume في Railway على المسار /data)
+DATA_DIR = "/data" if os.path.exists("/data") else "."
+HISTORY_FILE = os.path.join(DATA_DIR, "published_history.json")
 
 SYSTEM_PROMPT = """
 أنت كاتب محتوى متخصص في (الوعي الزوجي، الصحة النفسية والجسدية في الزواج، والعلاقات الأسرية) بأسلوب راقٍ، محافظ، علمي، ودافئ.
@@ -45,50 +32,76 @@ SYSTEM_PROMPT = """
 
 5. بعد الرمز مباشرة، اكتب سؤالاً تفاعلياً قصيراً في النهاية يفتح باب التفكير أو النقاش مع رمز تعبيري مناسب مثل (👇💬).
 
-الشروط:
-- استخدم فقرات قصيرة ومريحة للعين.
-- استخدم رموز تعبيرية هادئة مثل (🤍✨، ⚠️💔).
+الشروط الصارمة:
+- يجب أن يكون الموضوع والفكرة والزاوية جديدة ومبتكرة كلياً ومختلفة تماماً عن أي عنوان سابق.
+- استخدم فقرات قصيرة ومريحة للعين، ورموز تعبيرية هادئة مثل (🤍✨، ⚠️💔).
 - تجنب تماماً اللغة الأكاديمية الجافة أو أي ألفاظ خادشة للحياء.
 - لا تكتب أي مقدمات، ابدأ بالعنوان مباشرة.
 """
 
-# الخاتمة الثابتة بالرابط الصحيح لقناتك قبل السؤال التفاعلي
 CHANNEL_FOOTER = (
-    '\n<a href="https://t.me/Athar_Dz_Islamicc">قناة ريحانة المغرب 💌</a>\n'
+    '\n<a href="https://t.me">قناة ريحانة المغرب 💌</a>\n'
     'صدقة جارية لأم عقيدة وحمزة غ ـفر الله لها🖤\n'
 )
 
-def generate_post():
-    available_topics = [t for t in TOPICS if t not in recent_topics]
-    if not available_topics:
-        recent_topics.clear()
-        available_topics = TOPICS
-        
-    chosen_topic = random.choice(available_topics)
-    recent_topics.append(chosen_topic)
-    if len(recent_topics) > 5:
-        recent_topics.pop(0)
+def load_history():
+    """قراءة سجل جميع المنشورات السابقة من الملف الدائم"""
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
 
-    prompt = f"اكتب منشوراً عميقاً ومؤثراً حول الموضوع التالي: {chosen_topic}"
+def save_to_history(title):
+    """حفظ عنوان المنشور الجديد في السجل الدائم"""
+    history = load_history()
+    history.append(title)
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+def extract_title(post_text):
+    """استخراج السطر الأول (العنوان) لحفظه في الأرشيف"""
+    first_line = post_text.split("\n")[0]
+    clean_title = first_line.replace("<b>", "").replace("</b>", "").strip()
+    return clean_title
+
+def generate_unique_post():
+    history = load_history()
     
+    # صياغة قائمة الممنوعات من السجل الدائم
+    if history:
+        past_titles_text = "\n".join([f"- {t}" for t in history])
+        prompt = (
+            "ابتكر موضوعاً نفسياً أو زوجياً جديداً كلياً، عميقاً، ومختلفاً تماماً عن المواضيع السابقة.\n"
+            "قائمة العناوين والمواضيع التي تم نشرها سابقاً (ممنوع تكرارها أو الاقتراب من نفس فكرتها نهائياً):\n"
+            f"{past_titles_text}\n\n"
+            "اكتب الآن المنشور الجديد كلياً:"
+        )
+    else:
+        prompt = "ابتكر موضوعاً نفسياً أو زوجياً عميقاً ومؤثراً لأول منشور في القناة، واكتبه الآن:"
+
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
-            temperature=0.8,
+            temperature=0.95, # رفع مستوى الإبداع والتنويع لضمان أفكار متجددة كل يوم
         )
     )
     
     raw_text = response.text.strip()
     
-    # استبدال العلامة بالخاتمة الثابتة قبل السؤال التفاعلي
+    # استخراج العنوان وحفظه في السجل
+    new_title = extract_title(raw_text)
+    
     if "[FOOTER]" in raw_text:
         final_post = raw_text.replace("[FOOTER]", CHANNEL_FOOTER)
     else:
         final_post = f"{raw_text}\n{CHANNEL_FOOTER}"
         
-    return final_post
+    return final_post, new_title
 
 def send_to_telegram(text):
     url = f"https://telegram.org{TELEGRAM_TOKEN}/sendMessage"
@@ -99,28 +112,31 @@ def send_to_telegram(text):
         "disable_web_page_preview": True
     }
     response = requests.post(url, json=payload)
-    if response.status_code == 200:
-        print("✅ تم نشر المنشور بنجاح!")
-    else:
-        print(f"❌ خطأ في النشر: {response.text}")
+    return response.status_code == 200, response.text
 
 def job():
-    print("⏳ جاري توليد منشور جديد...")
+    print("⏳ جاري ابتكار منشور جديد غير مكرر...")
     try:
-        post_content = generate_post()
-        send_to_telegram(post_content)
+        post_content, new_title = generate_unique_post()
+        success, response_info = send_to_telegram(post_content)
+        if success:
+            save_to_history(new_title)
+            print(f"✅ تم النشر بنجاح وحفظ العنوان في الذاكرة الدائمة: {new_title}")
+        else:
+            print(f"❌ فشل النشر في تيليجرام: {response_info}")
     except Exception as e:
         print(f"⚠️ حدث خطأ: {e}")
 
 if __name__ == "__main__":
-    print("🚀 البوت بدأ العمل بنجاح على Railway...")
+    print("🚀 البوت بدأ العمل بذاكرة دائمة ومواضيع متجددة...")
     
-    # نشر منشور تجريبي فوري عند تشغيل البوت
+    # نشر منشور تجريبي عند التشغيل
     job()
     
-    # جدولة النشر اليومي (17:00 UTC تعادل الساعة 8:00 مساءً بتوقيت مكة المكرمة واليمن)
+    # جدولة النشر اليومي (17:00 UTC تعادل 8:00 مساءً بتوقيت مكة واليمن)
     schedule.every().day.at("17:00").do(job)
     
     while True:
         schedule.run_pending()
         time.sleep(30)
+    
