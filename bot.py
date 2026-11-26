@@ -48,7 +48,7 @@ SYSTEM_PROMPT = """
 التزم بهذا الهيكل:
 1. عنوان جذاب ومباشر يلامس مشكلة حقيقية بين الزوجين.
 اجعل العنوان عريضاً بهذا الشكل:
-**العنوان**
+*العنوان*
 2. اكسر مفهوماً خاطئاً شائعاً بين الأزواج بأسلوب لطيف.
 3. قدم تفسيراً نفسياً أو علمياً مبسطاً بلغة محترمة وواضحة.
 4. اكتب الحل الذهبي في سطرين بأسلوب دافئ وحنون.
@@ -65,7 +65,7 @@ SYSTEM_PROMPT = """
 """
 
 CHANNEL_FOOTER = """
-[قناة ريحانة المغرب](https://t.me/Athar_Dz_Islamicc)
+*[قناة رَيْحَانَةُ المَغْرِبِ الأَوْسَطِ 🌷](https://t.me/Athar_Dz_Islamicc)*
 صدقة جارية لأم عقيدة وحمزة، غفر الله لها
 """
 
@@ -192,6 +192,7 @@ def send_to_telegram(text):
         {
             "chat_id": CHANNEL_ID,
             "text": text,
+            "parse_mode": "Markdown",
             "disable_web_page_preview": True,
         },
     )
@@ -212,8 +213,7 @@ def job():
 
 
 if __name__ == "__main__":
-    print("البوت بدأ العمل")
-    job()
+    print("البوت بدأ العمل وينتظر موعد النشر التالي")
     print(f"توقيت الجدولة: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     for post_time in POST_TIMES:
         schedule.every().day.at(post_time).do(job)
