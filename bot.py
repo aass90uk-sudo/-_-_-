@@ -37,6 +37,10 @@ POST_TIMES = [
     "17:00",
     "21:00",
 ]
+SCHEDULE_TIMEZONE = "Asia/Aden"
+os.environ["TZ"] = SCHEDULE_TIMEZONE
+if hasattr(time, "tzset"):
+    time.tzset()
 
 SYSTEM_PROMPT = """
 أنت كاتب محتوى متخصص في الوعي الزوجي، الصحة النفسية والجسدية في الزواج، والعلاقات الأسرية.
@@ -193,54 +197,6 @@ def send_to_telegram(text):
     )
 
 
-def pin_message(message_id):
-    return call_telegram(
-        "pinChatMessage",
-        {
-            "chat_id": CHANNEL_ID,
-            "message_id": message_id,
-            "disable_notification": True,
-        },
-    )
-
-
-def build_schedule_message():
-    times_lines = "\n".join(
-        f"‏{index}. 🕰 {post_time}" for index, post_time in enumerate(POST_TIMES, start=1)
-    )
-    return (
-        "﴿ وَمِنْ آيَاتِهِ أَنْ خَلَقَ لَكُم مِّنْ أَنفُسِكُمْ أَزْوَاجًا لِّتَسْكُنُوا إِلَيْهَا "
-        "وَجَعَلَ بَيْنَكُم مَّوَدَّةً وَرَحْمَةً ﴾\n\n"
-        "🌷أهلاً بكم في قناة رَيْحَانَةُ المَغْرِبِ الأَوْسَطِ 🌿\n\n"
-        "هنا نزرع بذور الطمأنينة في بيوتكم...\n"
-        "مساحة هادئة نتحدّث فيها عن الوعي الزوجي، وعن النفس التي تسكن بينكم، وعن القلوب التي تتعب "
-        "حتى يبقى بيتكم هادئاً دافئاً.\n\n"
-        "حكاياتنا كلها عن شيء واحد: كيف تبقى المودة حيّة، وكيف يبقى البيت آواةً للقلب، "
-        "بلغة بيضاء راقية، وقلبٍ يفهمكم دون أن يحاكمكم.\n\n"
-        " ننشر لكم كل يوم في هذه التواقيت:\n"
-        f"{times_lines}\n\n"
-        "اجعلوا لنا من قلوبكم نصباً وشاركونا في التعليقات، فلربما كانت كلمتكم عوناً لبيتٍ آخر.\n\n"
-        "صدقة جارية لأم عقيدة وحمزة، غفر الله لها وأسكنها فسيح جناته 🤍"
-    )
-
-
-def send_schedule_and_pin():
-    print("جاري إرسال رسالة الجدولة والتثبيت")
-    success, response_info = send_to_telegram(build_schedule_message())
-    if not success:
-        print(f"فشل إرسال رسالة الجدولة: {response_info}")
-        return
-    message_id = response_info.get("result", {}).get("message_id")
-    if message_id is None:
-        print("تعذر الحصول على رقم الرسالة لتثبيتها")
-        return
-    pin_success, pin_info = pin_message(message_id)
-    if pin_success:
-        print("تم تثبيت رسالة الجدولة بنجاح")
-    else:
-        print(f"فشل تثبيت الرسالة: {pin_info}")
-
-
 def job():
     print("جاري إنشاء منشور جديد")
     try:
@@ -257,9 +213,11 @@ def job():
 
 if __name__ == "__main__":
     print("البوت بدأ العمل")
-    send_schedule_and_pin()
+    job()
+    print(f"توقيت الجدولة: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     for post_time in POST_TIMES:
         schedule.every().day.at(post_time).do(job)
+        print(f"تمت جدولة منشور الساعة {post_time} بتوقيت اليمن")
     while True:
         schedule.run_pending()
         time.sleep(30)
